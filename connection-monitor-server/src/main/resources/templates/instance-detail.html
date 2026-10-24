@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="fragments/header :: header('实例详情 - 连接池监控')"></head>
+<body>
+<nav th:replace="fragments/header :: navbar"></nav>
+
+<div class="container-fluid" th:if="${instance == null}">
+    <div class="alert alert-warning">实例不存在或尚未上报数据。</div>
+</div>
+
+<div class="container-fluid" th:if="${instance != null}">
+    <div class="d-flex flex-wrap align-items-center mb-3 gap-3">
+        <h5 class="mb-0" th:text="${instance.instanceId}">instance</h5>
+        <span class="text-secondary" th:text="${instance.appName}">app</span>
+        <span class="text-secondary" th:text="${instance.host}">host</span>
+        <span class="text-secondary"
+              th:text="'线程 ' + ${instance.totalThreadCount} + ' · 堆 '
+              + ${#numbers.formatDecimal(instance.heapUsedBytes div 1048576.0,1,0)} + ' MB'">jvm</span>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-white">
+            <form class="row row-cols-lg-auto g-2 align-items-center" method="get"
+                  th:action="@{/instance/{id}(id=${instance.instanceId})}">
+                <div class="col-12">
+                    <span class="fw-bold me-2">连接池</span>
+                    <span class="text-secondary small">共 <span th:text="${#lists.size(pools)}">0</span> 个（已按筛选条件过滤）</span>
+                </div>
+                <div class="col-6">
+                    <select class="form-select form-select-sm" name="poolType"
+                            onchange="this.form.submit()">
+                        <option value="">全部类型</option>
+                        <option th:each="type : ${poolTypes}" th:value="${type}" th:text="${type}"
+                                th:selected="${type == poolTypeFilter}">DRUID</option>
+                    </select>
+                </div>
+                <div class="col-6">
+                    <select class="form-select form-select-sm" name="beanName"
+                            onchange="this.form.submit()">
+                        <option value="">全部数据源 Bean</option>
+                        <option th:each="name : ${beanNames}" th:value="${name}" th:text="${name}"
+                                th:selected="${name == beanNameFilter}">masterDataSource</option>
+                    </select>
+                </div>
+                <noscript>
+                    <div class="col-12">
+                        <button class="btn btn-sm btn-outline-primary" type="submit">筛选</button>
+                    </div>
+                </noscript>
+            </form>
+        </div>
+        <div class="card-body">
+            <div th:if="${#lists.isEmpty(pools)}" class="text-secondary">当前筛选条件下没有连接池。</div>
+            <div class="table-responsive" th:if="${!#lists.isEmpty(pools)}">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light">
+                    <tr>
+                        <th>数据源 Bean</th>
+                        <th>连接池名称</th>
+                        <th>类型</th>
+                        <th class="text-end">Active</th>
+                        <th class="text-end">Idle</th>
+                        <th class="text-end">Total</th>
+                        <th class="text-end">Max</th>
+                        <th class="text-end">Pending</th>
+                        <th>指标可用性</th>
+                        <th>操作</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <tr th:each="pool : ${pools}">
+                        <td><code th:text="${pool.dataSourceBeanName}">bean</code></td>
+                        <td>
+                            <a class="pool-link"
+                               th:href="@{/pool(instanceId=${instance.instanceId},poolId=${pool.poolId})}"
+                               th:text="${pool.poolName}">pool</a>
+                        </td>
+                        <td>
+                            <span class="badge" th:classappend="'badge-type-' + ${pool.poolType}"
+                                  th:text="${pool.poolType}">DRUID</span>
+                        </td>
+                        <td class="text-end" th:text="${pool.activeConnections != null}
+                            ? ${pool.activeConnections} : '—'">4</td>
+                        <td class="text-end" th:text="${pool.idleConnections != null}
+                            ? ${pool.idleConnections} : '—'">6</td>
+                        <td class="text-end" th:text="${pool.totalConnections != null}
+                            ? ${pool.totalConnections} : '—'">10</td>
+                        <td class="text-end" th:text="${pool.maxConnections != null}
+                            ? ${pool.maxConnections} : '—'">50</td>
+                        <td class="text-end" th:text="${pool.threadsAwaitingConnection != null}
+                            ? ${pool.threadsAwaitingConnection} : '—'">0</td>
+                        <td>
+                            <span class="badge"
+                                  th:classappend="'badge-availability-' + ${pool.metricsAvailability}"
+                                  th:title="'不可用指标：' + ${pool.poolId}"
+                                  th:text="${pool.metricsAvailability}">FULL</span>
+                        </td>
+                        <td>
+                            <a class="btn btn-sm btn-outline-secondary"
+                               th:href="@{/pool(instanceId=${instance.instanceId},poolId=${pool.poolId})}">
+                                详情 / 趋势
+                            </a>
+                        </td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div th:replace="fragments/header :: footer"></div>
+</body>
+</html>

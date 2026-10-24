@@ -1,0 +1,40 @@
+body {
+    background-color: #f5f6f8;
+}
+
+.metric-null {
+    color: #adb5bd;
+}
+
+.badge-availability-FULL {
+    background-color: #198754;
+}
+
+.badge-availability-PARTIAL {
+    background-color: #fd7e14;
+}
+
+.badge-availability-UNAVAILABLE {
+    background-color: #6c757d;
+}
+
+.badge-type-DRUID {
+    background-color: #0d6efd;
+}
+
+.badge-type-HIKARI {
+    background-color: #6610f2;
+}
+
+.badge-type-UNKNOWN {
+    background-color: #495057;
+}
+
+.pool-link {
+    font-weight: 500;
+}
+
+#poolChart {
+    width: 100%;
+    height: 420px;
+}

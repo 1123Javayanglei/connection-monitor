@@ -1,0 +1,10 @@
+target/
+*.class
+*.jar
+!.mvn/wrapper/*.jar
+.idea/
+*.iml
+.DS_Store
+data/
+*.log
+.flattened-pom.xml

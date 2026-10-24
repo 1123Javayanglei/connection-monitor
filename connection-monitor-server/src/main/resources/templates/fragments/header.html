@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:fragment="header(title)">
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title th:text="${title}">connection-monitor</title>
+    <link rel="stylesheet" th:href="@{/css/bootstrap.min.css}"/>
+    <link rel="stylesheet" th:href="@{/css/monitor.css}"/>
+</head>
+<body>
+<nav class="navbar navbar-dark bg-dark mb-4" th:fragment="navbar">
+    <div class="container-fluid">
+        <a class="navbar-brand fw-bold" th:href="@{/}">连接池监控 connection-monitor</a>
+        <span class="navbar-text text-secondary small">业务 Pod 主动上报 · 多数据源 · Druid / HikariCP</span>
+    </div>
+</nav>
+<div th:fragment="footer" class="container-fluid text-center text-secondary small py-4">
+    connection-monitor · 仅存储连接池指标，不记录 SQL、完整 JDBC URL、用户名或密码
+</div>
+</body>
+</html>

@@ -1,0 +1,26 @@
+server:
+  port: ${MONITOR_SERVER_PORT:8090}
+
+spring:
+  application:
+    name: connection-monitor-server
+  datasource:
+    # 生产环境通过环境变量指向 MySQL：
+    #   MONITOR_DATASOURCE_URL=jdbc:mysql://<host>:3306/connection_monitor?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+    # 默认使用本地 H2 文件库（MySQL 兼容模式），便于开箱体验与测试。
+    url: ${MONITOR_DATASOURCE_URL:jdbc:h2:file:./data/connection-monitor;MODE=MySQL;DB_CLOSE_ON_EXIT=FALSE;AUTO_SERVER=TRUE}
+    username: ${MONITOR_DATASOURCE_USERNAME:sa}
+    password: ${MONITOR_DATASOURCE_PASSWORD:}
+    driver-class-name: ${MONITOR_DATASOURCE_DRIVER:org.h2.Driver}
+    initialization-mode: always
+  thymeleaf:
+    cache: true
+
+connection-monitor:
+  history:
+    # 历史数据保留天数，超期记录每日 03:30 清理
+    retention-days: 30
+
+logging:
+  level:
+    com.connectionmonitor: INFO

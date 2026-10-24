@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="fragments/header :: header('实例列表 - 连接池监控')"></head>
+<body>
+<nav th:replace="fragments/header :: navbar"></nav>
+
+<div class="container-fluid">
+    <div class="card shadow-sm">
+        <div class="card-header bg-white fw-bold">应用实例</div>
+        <div class="card-body">
+            <div th:if="${#lists.isEmpty(views)}" class="text-secondary">
+                暂无实例上报。请确认业务应用已引入 connection-monitor-spring-boot-starter
+                并配置 connection.monitor.server-url。
+            </div>
+            <div class="table-responsive" th:if="${!#lists.isEmpty(views)}">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light">
+                    <tr>
+                        <th>状态</th>
+                        <th>实例 ID</th>
+                        <th>应用名称</th>
+                        <th>主机</th>
+                        <th class="text-end">连接池数</th>
+                        <th style="width:16%">堆内存</th>
+                        <th class="text-end">线程</th>
+                        <th class="text-end">CPU</th>
+                        <th>最近上报</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <tr th:each="view : ${views}">
+                        <td>
+                            <span th:if="${view.online}" class="badge bg-success">在线</span>
+                            <span th:unless="${view.online}" class="badge bg-secondary">离线</span>
+                        </td>
+                        <td>
+                            <a class="pool-link"
+                               th:href="@{/instance/{id}(id=${view.row.instanceId})}"
+                               th:text="${view.row.instanceId}">instance-id</a>
+                        </td>
+                        <td th:text="${view.row.appName}">app</td>
+                        <td th:text="${view.row.host}">host</td>
+                        <td class="text-end" th:text="${view.row.poolCount}">0</td>
+                        <td>
+                            <div th:if="${view.heapDisplay != null}">
+                                <div class="progress" style="height:6px">
+                                    <div class="progress-bar" role="progressbar"
+                                         th:classappend="${view.heapUsedPercent > 85} ? 'bg-danger' : 'bg-success'"
+                                         th:style="'width:' + ${view.heapUsedPercent} + '%'"></div>
+                                </div>
+                                <span class="small text-secondary" th:text="${view.heapDisplay}">-</span>
+                            </div>
+                            <span th:if="${view.heapDisplay == null}" class="metric-null">—</span>
+                        </td>
+                        <td class="text-end" th:text="${view.row.totalThreadCount != null}
+                            ? ${view.row.totalThreadCount} : '—'">-</td>
+                        <td class="text-end">
+                            <span th:if="${view.cpuDisplay != null}" th:text="${view.cpuDisplay}">-</span>
+                            <span th:if="${view.cpuDisplay == null}" class="metric-null">—</span>
+                        </td>
+                        <td class="small" th:text="${view.lastReportDisplay}">-</td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div th:replace="fragments/header :: footer"></div>
+</body>
+</html>

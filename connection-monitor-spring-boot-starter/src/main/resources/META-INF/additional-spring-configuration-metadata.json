@@ -1,0 +1,40 @@
+{
+  "properties": [
+    {
+      "name": "connection.monitor.enabled",
+      "type": "java.lang.Boolean",
+      "defaultValue": true,
+      "description": "是否启用连接池监控采集与上报。"
+    },
+    {
+      "name": "connection.monitor.server-url",
+      "type": "java.lang.String",
+      "defaultValue": "",
+      "description": "监控服务端地址（例如 http://monitor.internal:8090），为空时只采集不上报。"
+    },
+    {
+      "name": "connection.monitor.report-interval-ms",
+      "type": "java.lang.Long",
+      "defaultValue": 30000,
+      "description": "上报周期（毫秒），最小 1000。"
+    },
+    {
+      "name": "connection.monitor.report-initial-delay-ms",
+      "type": "java.lang.Long",
+      "defaultValue": 15000,
+      "description": "首次上报延迟（毫秒），避开业务启动高峰。"
+    },
+    {
+      "name": "connection.monitor.request-timeout-ms",
+      "type": "java.lang.Integer",
+      "defaultValue": 5000,
+      "description": "上报 HTTP 连接/读取超时（毫秒）。"
+    },
+    {
+      "name": "connection.monitor.instance-id",
+      "type": "java.lang.String",
+      "defaultValue": "",
+      "description": "显式指定实例 ID；为空时自动生成 hostname:appName:随机后缀。"
+    }
+  ]
+}
