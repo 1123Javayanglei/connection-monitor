@@ -2,7 +2,7 @@
 
 面向 Spring Boot 业务应用的连接池监控系统：**客户端 Starter 主动上报，服务端独立部署**，
 支持 **MyBatis-Plus 多数据源、Druid、HikariCP 及多连接池混合**场景。
-自带 Thymeleaf + Bootstrap + ECharts 页面，MySQL 保存指标；
+自带 Thymeleaf + Bootstrap + ECharts 页面，MySQL / GaussDB / PostgreSQL / H2 保存指标；
 **不依赖 Nacos / Prometheus / Grafana / Elasticsearch**；保持 **JDK 8 + Spring Boot 2.4.13** 兼容。
 
 ## 1. 总体架构
@@ -15,8 +15,9 @@
 │    └── DataSource A                │  │        ▲                         │
 │         └── Druid 或 HikariCP      │  │        │ JSON（统一 PoolSnapshot） │
 │  MyBatis-Plus/SqlSessionFactory B ─┤──────────┘                         │
-│    └── DataSource B                │  │  MySQL：monitor_pool_latest      │
-│         └── Druid 或 HikariCP      │  │        monitor_pool_history      │
+│    └── DataSource B                │  │  数据库（MySQL/GaussDB/PG/H2）：   │
+│         └── Druid 或 HikariCP      │  │        monitor_pool_latest      │
+│                                   │  │        monitor_pool_history      │
 │                                   │  │        monitor_instance          │
 │  connection-monitor Starter:      │  │                                  │
 │   ├─ DataSource Discovery         │  │  页面：实例列表 → 实例详情          │
@@ -49,7 +50,10 @@ java -jar connection-monitor-server/target/connection-monitor-server-1.0.0-SNAPS
 
 访问 `http://localhost:8090/`。
 
-生产环境连接 MySQL（建表脚本见 `docs/sql/schema-mysql.sql`）：
+生产环境可连接 MySQL、GaussDB / openGauss、PostgreSQL（建表脚本见 `db/schema-*.sql`，
+启动时按数据库方言自动执行；MySQL 也可直接执行 `docs/sql/schema-mysql.sql`）。
+
+MySQL：
 
 ```bash
 export MONITOR_DATASOURCE_URL='jdbc:mysql://<host>:3306/connection_monitor?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai'
@@ -58,8 +62,22 @@ export MONITOR_DATASOURCE_PASSWORD='******'
 java -jar connection-monitor-server-1.0.0-SNAPSHOT.jar
 ```
 
-首次启动自动执行 `schema.sql`（`CREATE TABLE IF NOT EXISTS`，幂等）。
-从旧版本（`instance_id + pool_name` 唯一键）升级请执行 `docs/sql/migration-v2.sql`。
+GaussDB / openGauss（驱动 jar 需随服务端提供，详见 [docs/database-support.md](docs/database-support.md)）：
+
+```bash
+export MONITOR_DATASOURCE_URL='jdbc:gaussdb://<host>:8000/connection_monitor'
+export MONITOR_DATASOURCE_USERNAME=monitor
+export MONITOR_DATASOURCE_PASSWORD='******'
+export MONITOR_DATASOURCE_DRIVER='com.huawei.gaussdb.jdbc.Driver'  # 以实际驱动类名为准
+export MONITOR_STORAGE_DIALECT=gaussdb                             # 可选，默认可自动识别
+java -Dloader.path=/path/to/gaussdb-driver.jar \
+     -cp connection-monitor-server-1.0.0-SNAPSHOT.jar org.springframework.boot.loader.PropertiesLauncher
+```
+
+首次启动自动执行对应方言的建表脚本（`CREATE TABLE IF NOT EXISTS`，幂等）；
+识别不到数据库时可显式配置 `connection-monitor.storage.dialect`，或设置
+`connection-monitor.storage.init-schema=false` 由 DBA 手工建表。
+从旧版本（MySQL 旧库，`instance_id + pool_name` 唯一键）升级请执行 `docs/sql/migration-v2.sql`。
 
 ### 2.2 业务应用接入
 
@@ -155,7 +173,8 @@ Druid 与 HikariCP 输出**同一数据结构**，服务端不维护两套模型
 
 ## 7. 服务端存储与页面
 
-数据表（MySQL 5.7+ / H2 MySQL 模式通用，`schema.sql` 自动执行）：
+数据表（内置 MySQL 5.7+ / GaussDB / openGauss / PostgreSQL / H2 方言，
+启动时按方言自动选择 `db/schema-*.sql` 并幂等执行）：
 
 - `monitor_pool_latest`：最新状态，唯一键 `(instance_id, pool_id)`，
   含 `data_source_id` / `data_source_bean_name` / `pool_type` / `pool_version` /
@@ -174,7 +193,8 @@ Druid 与 HikariCP 输出**同一数据结构**，服务端不维护两套模型
   ECharts 历史趋势（1h/6h/24h/7d + 原始/1m/5m/1h 粒度），同一 `poolId`
   关联最新状态与历史曲线。
 
-API 与页面说明详见 [docs/api.md](docs/api.md)，部署细节见 [docs/deployment.md](docs/deployment.md)。
+API 与页面说明详见 [docs/api.md](docs/api.md)，部署细节见 [docs/deployment.md](docs/deployment.md)，
+数据库支持与扩展方式见 [docs/database-support.md](docs/database-support.md)。
 
 ## 8. 依赖与兼容性
 
@@ -184,15 +204,18 @@ API 与页面说明详见 [docs/api.md](docs/api.md)，部署细节见 [docs/dep
 | jackson-databind | Starter | optional | 上报 JSON 序列化；缺失时降级为只采集不上报（不抛错） |
 | Druid（`com.alibaba:druid`，测试用 1.2.8） | Starter | optional | 编译基于 Druid 公开统计 API；由业务应用实际版本提供，**不强制引入、不覆盖版本**；1.1.x 起方法兼容，1.0.x 个别签名差异会被逐指标隔离 |
 | HikariCP | Starter | optional | 由业务应用依赖提供（Spring Boot 2.4.13 管理 3.4.5）；**不强制升级、不额外创建监控用连接池** |
-| MySQL Connector/H2 | 服务端 | 运行时 | 生产 MySQL；开发/测试 H2（MySQL 兼容模式） |
+| MySQL Connector/J、H2 | 服务端 | 运行时 | MySQL/MariaDB 生产、H2 开发/测试（MySQL 兼容模式） |
+| GaussDB / openGauss JDBC 驱动 | 服务端 | 运行时（按需） | GaussDB 驱动通常不在 Maven Central，需随部署提供；openGauss 也可使用 PostgreSQL 兼容驱动 |
+| PostgreSQL JDBC 驱动 | 服务端 | 运行时（按需） | 连接 PostgreSQL 或使用 PostgreSQL 兼容协议的 openGauss 时提供 |
 | MyBatis-Plus（3.4.3.4） | 仅测试 | 否 | 用于多数据源兼容性场景测试；Starter 代码不引用任何 MyBatis 类 |
 
-兼容性验证：JDK 8（OpenJDK 1.8.0_504）+ Spring Boot 2.4.13 全量构建与测试通过；
+兼容性目标：JDK 8（OpenJDK 1.8.0_504）+ Spring Boot 2.4.13；
 Starter 在有/无 MyBatis-Plus、有/无 Druid、有/无 HikariCP 的应用中均可正常启动。
+本次数据库支持改造后请执行第 10 节的全量构建与测试确认。
 
 ## 9. 测试覆盖（对应实施文档场景 A–G）
 
-`mvn test` 共 39 个用例：
+`mvn test` 共 47 个用例：
 
 - **场景 A** 单数据源 + MyBatis-Plus + HikariCP：一个池 + JVM 指标上报；
 - **场景 B** 多数据源 + Druid（含 `@Primary`、多个 SqlSessionFactory）：两池分别上报、不重复统计、非 Primary 不漏采；
@@ -204,7 +227,8 @@ Starter 在有/无 MyBatis-Plus、有/无 Druid、有/无 HikariCP 的应用中�
 - **单元**：解包器（代理/深度上限/白名单）、Druid/HikariCP 采集器（逐指标隔离、未启动池降级）、
   发现服务（按实例去重、ID 稳定性、路由展开）；
 - **服务端**：上报 API（同名不覆盖、null 保真、坏报文拒绝）、历史 API（poolId 隔离、分桶）、
-  页面渲染（类型/Bean 筛选、连接池详情）。
+  页面渲染（类型/Bean 筛选、连接池详情）；
+- **存储方言**：H2/MySQL/GaussDB/PostgreSQL 识别、GaussDB URL 与产品名匹配、内置建表脚本完整性。
 
 ## 10. 构建
 

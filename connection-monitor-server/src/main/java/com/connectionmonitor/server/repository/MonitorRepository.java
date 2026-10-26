@@ -7,16 +7,19 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -29,6 +32,38 @@ public class MonitorRepository {
     private static final Logger LOG = LoggerFactory.getLogger(MonitorRepository.class);
 
     private static final int MAX_HISTORY_ROWS = 20000;
+
+    /**
+     * 跨数据库可移植的 upsert：先 UPDATE，影响行数为 0 时再 INSERT；
+     * 并发插入遇到唯一键冲突时回退为 UPDATE。
+     * 不使用 MySQL 专有的 ON DUPLICATE KEY UPDATE，GaussDB/PostgreSQL/H2 均可运行。
+     */
+    private static final String UPDATE_INSTANCE_SQL =
+            "UPDATE monitor_instance SET app_name = ?, host = ?, heap_used_bytes = ?, heap_max_bytes = ?,"
+                    + " non_heap_used_bytes = ?, total_thread_count = ?, peak_thread_count = ?,"
+                    + " daemon_thread_count = ?, loaded_class_count = ?, uptime_ms = ?, process_cpu_load = ?,"
+                    + " last_report_time = ?, update_time = ? WHERE instance_id = ?";
+
+    private static final String INSERT_INSTANCE_SQL =
+            "INSERT INTO monitor_instance (instance_id, app_name, host, heap_used_bytes, heap_max_bytes,"
+                    + " non_heap_used_bytes, total_thread_count, peak_thread_count, daemon_thread_count,"
+                    + " loaded_class_count, uptime_ms, process_cpu_load, last_report_time, create_time, update_time)"
+                    + " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+
+    private static final String UPDATE_LATEST_SQL =
+            "UPDATE monitor_pool_latest SET data_source_id = ?, data_source_bean_name = ?, pool_name = ?,"
+                    + " pool_type = ?, pool_version = ?, metrics_availability = ?, active_connections = ?,"
+                    + " idle_connections = ?, total_connections = ?, max_connections = ?,"
+                    + " min_idle_connections = ?, threads_awaiting_connection = ?, connection_timeout_ms = ?,"
+                    + " extra_metrics = ?, sample_time = ?, update_time = ?"
+                    + " WHERE instance_id = ? AND pool_id = ?";
+
+    private static final String INSERT_LATEST_SQL =
+            "INSERT INTO monitor_pool_latest (instance_id, pool_id, data_source_id, data_source_bean_name,"
+                    + " pool_name, pool_type, pool_version, metrics_availability, active_connections,"
+                    + " idle_connections, total_connections, max_connections, min_idle_connections,"
+                    + " threads_awaiting_connection, connection_timeout_ms, extra_metrics, sample_time,"
+                    + " create_time, update_time) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -57,7 +92,7 @@ public class MonitorRepository {
                 upsertLatest(report.getInstanceId(), pool, now);
                 insertHistory(report.getInstanceId(), pool);
             } catch (DataAccessException e) {
-                LOG.warn("保存连接池 [}/{}] 失败，跳过该池: {}",
+                LOG.warn("保存连接池 [{}/{}] 失败，跳过该池: {}",
                         report.getInstanceId(), pool.getPoolId(), e.getMessage());
             }
         }
@@ -65,93 +100,108 @@ public class MonitorRepository {
 
     private void upsertInstance(MetricsReport report, Timestamp now) {
         JvmMetrics jvm = report.getJvm();
-        final Long heapUsed = jvm == null ? null : jvm.getHeapUsedBytes();
-        final Long heapMax = jvm == null ? null : jvm.getHeapMaxBytes();
-        final Long nonHeapUsed = jvm == null ? null : jvm.getNonHeapUsedBytes();
-        final Integer threads = jvm == null ? null : jvm.getTotalThreadCount();
-        final Integer peakThreads = jvm == null ? null : jvm.getPeakThreadCount();
-        final Integer daemonThreads = jvm == null ? null : jvm.getDaemonThreadCount();
-        final Integer loadedClasses = jvm == null ? null : jvm.getLoadedClassCount();
-        final Long uptime = jvm == null ? null : jvm.getUptimeMs();
-        final Double cpuLoad = jvm == null ? null : jvm.getProcessCpuLoad();
         final long reportTime = report.getReportTime() != null ? report.getReportTime() : now.getTime();
-        jdbcTemplate.update(
-                "INSERT INTO monitor_instance (instance_id, app_name, host, heap_used_bytes, heap_max_bytes,"
-                        + " non_heap_used_bytes, total_thread_count, peak_thread_count, daemon_thread_count,"
-                        + " loaded_class_count, uptime_ms, process_cpu_load, last_report_time, create_time, update_time)"
-                        + " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
-                        + " ON DUPLICATE KEY UPDATE app_name=VALUES(app_name), host=VALUES(host),"
-                        + " heap_used_bytes=VALUES(heap_used_bytes), heap_max_bytes=VALUES(heap_max_bytes),"
-                        + " non_heap_used_bytes=VALUES(non_heap_used_bytes),"
-                        + " total_thread_count=VALUES(total_thread_count),"
-                        + " peak_thread_count=VALUES(peak_thread_count),"
-                        + " daemon_thread_count=VALUES(daemon_thread_count),"
-                        + " loaded_class_count=VALUES(loaded_class_count), uptime_ms=VALUES(uptime_ms),"
-                        + " process_cpu_load=VALUES(process_cpu_load), last_report_time=VALUES(last_report_time),"
-                        + " update_time=VALUES(update_time)",
-                ps -> {
-                    ps.setString(1, report.getInstanceId());
-                    ps.setString(2, report.getAppName());
-                    ps.setString(3, report.getHost());
-                    setNullableLong(ps, 4, heapUsed);
-                    setNullableLong(ps, 5, heapMax);
-                    setNullableLong(ps, 6, nonHeapUsed);
-                    setNullableInt(ps, 7, threads);
-                    setNullableInt(ps, 8, peakThreads);
-                    setNullableInt(ps, 9, daemonThreads);
-                    setNullableInt(ps, 10, loadedClasses);
-                    setNullableLong(ps, 11, uptime);
-                    if (cpuLoad == null) {
-                        ps.setNull(12, java.sql.Types.DOUBLE);
-                    } else {
-                        ps.setDouble(12, cpuLoad);
-                    }
-                    ps.setLong(13, reportTime);
-                    ps.setTimestamp(14, now);
-                    ps.setTimestamp(15, now);
-                });
+
+        int updated = jdbcTemplate.update(UPDATE_INSTANCE_SQL,
+                ps -> bindInstance(ps, report, jvm, reportTime, now, false));
+        if (updated > 0) {
+            return;
+        }
+        try {
+            jdbcTemplate.update(INSERT_INSTANCE_SQL,
+                    ps -> bindInstance(ps, report, jvm, reportTime, now, true));
+        } catch (DataAccessException e) {
+            // 并发上报时可能已被其他线程插入；仅唯一键冲突回退为 UPDATE。
+            if (!isDuplicateKey(e)) {
+                throw e;
+            }
+            jdbcTemplate.update(UPDATE_INSTANCE_SQL,
+                    ps -> bindInstance(ps, report, jvm, reportTime, now, false));
+        }
     }
 
     private void upsertLatest(String instanceId, PoolSnapshot pool, Timestamp now) {
-        long sampleTime = pool.getSampleTime() != null ? pool.getSampleTime() : now.getTime();
-        jdbcTemplate.update(
-                "INSERT INTO monitor_pool_latest (instance_id, pool_id, data_source_id, data_source_bean_name,"
-                        + " pool_name, pool_type, pool_version, metrics_availability, active_connections,"
-                        + " idle_connections, total_connections, max_connections, min_idle_connections,"
-                        + " threads_awaiting_connection, connection_timeout_ms, extra_metrics, sample_time,"
-                        + " create_time, update_time)"
-                        + " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
-                        + " ON DUPLICATE KEY UPDATE data_source_id=VALUES(data_source_id),"
-                        + " data_source_bean_name=VALUES(data_source_bean_name), pool_name=VALUES(pool_name),"
-                        + " pool_type=VALUES(pool_type), pool_version=VALUES(pool_version),"
-                        + " metrics_availability=VALUES(metrics_availability),"
-                        + " active_connections=VALUES(active_connections), idle_connections=VALUES(idle_connections),"
-                        + " total_connections=VALUES(total_connections), max_connections=VALUES(max_connections),"
-                        + " min_idle_connections=VALUES(min_idle_connections),"
-                        + " threads_awaiting_connection=VALUES(threads_awaiting_connection),"
-                        + " connection_timeout_ms=VALUES(connection_timeout_ms), extra_metrics=VALUES(extra_metrics),"
-                        + " sample_time=VALUES(sample_time), update_time=VALUES(update_time)",
-                ps -> {
-                    ps.setString(1, instanceId);
-                    ps.setString(2, pool.getPoolId());
-                    ps.setString(3, orEmpty(pool.getDataSourceId()));
-                    ps.setString(4, pool.getDataSourceBeanName());
-                    ps.setString(5, pool.getPoolName());
-                    ps.setString(6, pool.getPoolType());
-                    ps.setString(7, pool.getPoolVersion());
-                    ps.setString(8, pool.getMetricsAvailability());
-                    setNullableInt(ps, 9, pool.getActiveConnections());
-                    setNullableInt(ps, 10, pool.getIdleConnections());
-                    setNullableInt(ps, 11, pool.getTotalConnections());
-                    setNullableInt(ps, 12, pool.getMaxConnections());
-                    setNullableInt(ps, 13, pool.getMinIdleConnections());
-                    setNullableInt(ps, 14, pool.getThreadsAwaitingConnection());
-                    setNullableLong(ps, 15, pool.getConnectionTimeoutMs());
-                    ps.setString(16, serializeExtra(pool));
-                    ps.setLong(17, sampleTime);
-                    ps.setTimestamp(18, now);
-                    ps.setTimestamp(19, now);
-                });
+        final long sampleTime = pool.getSampleTime() != null ? pool.getSampleTime() : now.getTime();
+
+        int updated = jdbcTemplate.update(UPDATE_LATEST_SQL,
+                ps -> bindLatest(ps, instanceId, pool, sampleTime, now, false));
+        if (updated > 0) {
+            return;
+        }
+        try {
+            jdbcTemplate.update(INSERT_LATEST_SQL,
+                    ps -> bindLatest(ps, instanceId, pool, sampleTime, now, true));
+        } catch (DataAccessException e) {
+            if (!isDuplicateKey(e)) {
+                throw e;
+            }
+            jdbcTemplate.update(UPDATE_LATEST_SQL,
+                    ps -> bindLatest(ps, instanceId, pool, sampleTime, now, false));
+        }
+    }
+
+    private void bindInstance(PreparedStatement ps, MetricsReport report, JvmMetrics jvm,
+                              long reportTime, Timestamp now, boolean insert) throws SQLException {
+        int i = 1;
+        if (insert) {
+            ps.setString(i++, report.getInstanceId());
+        }
+        ps.setString(i++, report.getAppName());
+        ps.setString(i++, report.getHost());
+        setNullableLong(ps, i++, jvm == null ? null : jvm.getHeapUsedBytes());
+        setNullableLong(ps, i++, jvm == null ? null : jvm.getHeapMaxBytes());
+        setNullableLong(ps, i++, jvm == null ? null : jvm.getNonHeapUsedBytes());
+        setNullableInt(ps, i++, jvm == null ? null : jvm.getTotalThreadCount());
+        setNullableInt(ps, i++, jvm == null ? null : jvm.getPeakThreadCount());
+        setNullableInt(ps, i++, jvm == null ? null : jvm.getDaemonThreadCount());
+        setNullableInt(ps, i++, jvm == null ? null : jvm.getLoadedClassCount());
+        setNullableLong(ps, i++, jvm == null ? null : jvm.getUptimeMs());
+        Double cpuLoad = jvm == null ? null : jvm.getProcessCpuLoad();
+        if (cpuLoad == null) {
+            ps.setNull(i++, java.sql.Types.DOUBLE);
+        } else {
+            ps.setDouble(i++, cpuLoad);
+        }
+        ps.setLong(i++, reportTime);
+        if (insert) {
+            ps.setTimestamp(i++, now);
+        }
+        ps.setTimestamp(i++, now);
+        if (!insert) {
+            ps.setString(i++, report.getInstanceId());
+        }
+    }
+
+    private void bindLatest(PreparedStatement ps, String instanceId, PoolSnapshot pool,
+                            long sampleTime, Timestamp now, boolean insert) throws SQLException {
+        int i = 1;
+        if (insert) {
+            ps.setString(i++, instanceId);
+            ps.setString(i++, pool.getPoolId());
+        }
+        ps.setString(i++, orEmpty(pool.getDataSourceId()));
+        ps.setString(i++, pool.getDataSourceBeanName());
+        ps.setString(i++, pool.getPoolName());
+        ps.setString(i++, pool.getPoolType());
+        ps.setString(i++, pool.getPoolVersion());
+        ps.setString(i++, pool.getMetricsAvailability());
+        setNullableInt(ps, i++, pool.getActiveConnections());
+        setNullableInt(ps, i++, pool.getIdleConnections());
+        setNullableInt(ps, i++, pool.getTotalConnections());
+        setNullableInt(ps, i++, pool.getMaxConnections());
+        setNullableInt(ps, i++, pool.getMinIdleConnections());
+        setNullableInt(ps, i++, pool.getThreadsAwaitingConnection());
+        setNullableLong(ps, i++, pool.getConnectionTimeoutMs());
+        ps.setString(i++, serializeExtra(pool));
+        ps.setLong(i++, sampleTime);
+        if (insert) {
+            ps.setTimestamp(i++, now);
+        }
+        ps.setTimestamp(i++, now);
+        if (!insert) {
+            ps.setString(i++, instanceId);
+            ps.setString(i++, pool.getPoolId());
+        }
     }
 
     private void insertHistory(String instanceId, PoolSnapshot pool) {
@@ -292,6 +342,39 @@ public class MonitorRepository {
     }
 
     // ---------------------------------------------------------------- 辅助
+
+    /**
+     * 判断异常是否为唯一键冲突。不同数据库/驱动可能抛出 DuplicateKeyException
+     * 或原始 SQLIntegrityConstraintViolationException，这里统一识别。
+     */
+    private static boolean isDuplicateKey(DataAccessException e) {
+        if (e instanceof DuplicateKeyException) {
+            return true;
+        }
+        Throwable cause = e.getMostSpecificCause();
+        if (cause instanceof SQLException) {
+            SQLException sqlException = (SQLException) cause;
+            String state = sqlException.getSQLState();
+            int code = sqlException.getErrorCode();
+            if ("23505".equals(state)) {
+                return true;
+            }
+            // MySQL 1062、SQL Server 2601/2627
+            if (code == 1062 || code == 2601 || code == 2627) {
+                return true;
+            }
+        }
+        String message = cause == null ? null : cause.getMessage();
+        if (message != null) {
+            String lower = message.toLowerCase(Locale.ROOT);
+            return lower.contains("duplicate")
+                    || lower.contains("unique constraint")
+                    || lower.contains("unique violation")
+                    || lower.contains("重复")
+                    || lower.contains("唯一");
+        }
+        return false;
+    }
 
     private String serializeExtra(PoolSnapshot pool) {
         if (pool.getExtraMetrics() == null || pool.getExtraMetrics().isEmpty()) {

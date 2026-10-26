@@ -105,7 +105,7 @@
 | `/instance/{instanceId}` | 实例详情：连接池表格；`?poolType=`、`?beanName=` 筛选 |
 | `/pool?instanceId={id}&poolId={pid}` | 连接池详情：最新指标、扩展指标、ECharts 历史趋势 |
 
-## 4. 数据表（服务端 MySQL）
+## 4. 数据表（服务端存储）
 
 - `monitor_pool_latest`：唯一键 `(instance_id, pool_id)`；含
   `data_source_id`、`data_source_bean_name`、`pool_type`、`pool_version`、
@@ -113,4 +113,6 @@
 - `monitor_pool_history`：`(instance_id, pool_id, sample_time)` 索引；缺失指标 `NULL`；
 - `monitor_instance`：实例主键 + JVM 指标 + `last_report_time`。
 
-DDL 见 `src/main/resources/schema.sql`（自动执行）与 `docs/sql/schema-mysql.sql`（生产建库脚本）。
+DDL 按数据库方言存放于 `src/main/resources/db/schema-*.sql`（H2 / MySQL / GaussDB / PostgreSQL，
+启动时自动选择并幂等执行）；生产 MySQL 也可直接执行 `docs/sql/schema-mysql.sql`。
+数据库支持与扩展方式见 [database-support.md](database-support.md)。

@@ -5,18 +5,32 @@ spring:
   application:
     name: connection-monitor-server
   datasource:
-    # 生产环境通过环境变量指向 MySQL：
-    #   MONITOR_DATASOURCE_URL=jdbc:mysql://<host>:3306/connection_monitor?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+    # 生产环境通过环境变量指向 MySQL / GaussDB / PostgreSQL：
+    #   MySQL:    jdbc:mysql://<host>:3306/connection_monitor?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+    #   GaussDB:  jdbc:gaussdb://<host>:8000/connection_monitor
+    #   openGauss: jdbc:postgresql://<host>:5432/connection_monitor
     # 默认使用本地 H2 文件库（MySQL 兼容模式），便于开箱体验与测试。
     url: ${MONITOR_DATASOURCE_URL:jdbc:h2:file:./data/connection-monitor;MODE=MySQL;DB_CLOSE_ON_EXIT=FALSE;AUTO_SERVER=TRUE}
     username: ${MONITOR_DATASOURCE_USERNAME:sa}
     password: ${MONITOR_DATASOURCE_PASSWORD:}
-    driver-class-name: ${MONITOR_DATASOURCE_DRIVER:org.h2.Driver}
-    initialization-mode: always
+    # 默认留空，由 Spring Boot 根据 JDBC URL 自动推断驱动；
+    # GaussDB 等特殊驱动可通过 MONITOR_DATASOURCE_DRIVER 显式指定。
+    driver-class-name: ${MONITOR_DATASOURCE_DRIVER:}
+    # 建表由 connection-monitor.storage 按数据库方言执行（db/schema-*.sql），
+    # 不使用 Spring Boot 的 schema.sql 自动初始化，避免 MySQL 专有 DDL 在其他数据库启动失败。
+    initialization-mode: never
   thymeleaf:
     cache: true
 
 connection-monitor:
+  storage:
+    # auto：按 JDBC URL / 数据库产品名自动识别
+    # 可选：h2 / mysql / gaussdb / postgresql，或自定义方言 Bean 的 id
+    dialect: ${MONITOR_STORAGE_DIALECT:auto}
+    # 启动时执行对应方言的建表脚本；已由 DBA 建表时可设为 false
+    init-schema: ${MONITOR_STORAGE_INIT_SCHEMA:true}
+    # 自定义建表脚本（classpath: 或 file:，多个用逗号分隔），配置后优先于内置脚本
+    # schema-location: classpath:db/schema-custom.sql
   history:
     # 历史数据保留天数，超期记录每日 03:30 清理
     retention-days: 30

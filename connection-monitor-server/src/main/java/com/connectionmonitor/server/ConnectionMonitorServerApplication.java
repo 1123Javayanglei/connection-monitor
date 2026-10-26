@@ -5,7 +5,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
- * 连接池监控服务端。独立部署在实体机，使用 MySQL 保存指标，
+ * 连接池监控服务端。独立部署在实体机，使用 MySQL / GaussDB / PostgreSQL / H2 保存指标，
  * 自带 Thymeleaf + Bootstrap + ECharts 页面。
  */
 @EnableScheduling

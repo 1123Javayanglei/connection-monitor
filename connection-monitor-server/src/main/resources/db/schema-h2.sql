@@ -1,6 +1,6 @@
--- connection-monitor 服务端建表脚本（MySQL 5.7+ / H2 MySQL 模式通用）
--- 最新状态表：以 (instance_id, pool_id) 唯一，区分同实例下多个连接池，
--- 同名连接池（pool_name 相同）不会互相覆盖。
+-- connection-monitor H2 建表脚本（开发/测试默认库，MySQL 兼容模式）
+-- 由 connection-monitor.storage 自动选择并执行；脚本幂等，可重复运行。
+
 CREATE TABLE IF NOT EXISTS monitor_pool_latest (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     instance_id VARCHAR(128) NOT NULL,
@@ -27,8 +27,6 @@ CREATE TABLE IF NOT EXISTS monitor_pool_latest (
     KEY idx_bean_name (data_source_bean_name)
 );
 
--- 历史数据表：以稳定 pool_id 关联连接池（而非显示名称），
--- 某类连接池未提供的指标存 NULL，查询时按 pool_id 隔离，不会混淆 Druid/HikariCP 指标。
 CREATE TABLE IF NOT EXISTS monitor_pool_history (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     instance_id VARCHAR(128) NOT NULL,
@@ -44,7 +42,6 @@ CREATE TABLE IF NOT EXISTS monitor_pool_history (
     KEY idx_instance_pool_time (instance_id, pool_id, sample_time)
 );
 
--- 实例表：JVM 指标与最近上报时间
 CREATE TABLE IF NOT EXISTS monitor_instance (
     instance_id VARCHAR(128) PRIMARY KEY,
     app_name VARCHAR(256),

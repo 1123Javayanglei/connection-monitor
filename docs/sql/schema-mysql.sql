@@ -1,5 +1,6 @@
--- connection-monitor 生产 MySQL 建表脚本（与 src/main/resources/schema.sql 等价，
--- 增加 InnoDB / utf8mb4 显式声明。应用启动时 schema.sql 也会幂等执行，二者任选其一。）
+-- connection-monitor MySQL / MariaDB 建表脚本
+-- 由 connection-monitor.storage 自动选择并执行；脚本幂等，可重复运行。
+-- 生产环境也可直接执行本文件（与 src/main/resources/db/schema-mysql.sql 内容一致）。
 
 CREATE TABLE IF NOT EXISTS monitor_pool_latest (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,

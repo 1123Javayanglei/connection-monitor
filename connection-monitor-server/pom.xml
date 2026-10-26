@@ -12,7 +12,7 @@
 
     <artifactId>connection-monitor-server</artifactId>
     <name>connection-monitor-server</name>
-    <description>连接池监控服务端：独立部署于实体机，接收业务 Pod 主动上报，MySQL 保存指标，
+    <description>连接池监控服务端：独立部署于实体机，接收业务 Pod 主动上报，MySQL / GaussDB / PostgreSQL / H2 保存指标，
         自带 Thymeleaf + Bootstrap + ECharts 页面，不依赖 Nacos/Prometheus/Grafana/Elasticsearch</description>
 
     <dependencies>
@@ -29,7 +29,7 @@
             <artifactId>spring-boot-starter-thymeleaf</artifactId>
         </dependency>
 
-        <!-- 生产存储：MySQL；开发/测试默认使用 H2（MySQL 兼容模式） -->
+        <!-- 内置数据库驱动：MySQL 生产、H2 开发/测试；GaussDB / PostgreSQL 驱动由部署方提供 -->
         <dependency>
             <groupId>mysql</groupId>
             <artifactId>mysql-connector-java</artifactId>
